@@ -780,6 +780,52 @@ def validate_metric_scoping(data: dict) -> list[str]:
     return errors
 
 
+def validate_filter_expressions(data: dict) -> list[str]:
+    """Reject aggregate and window functions in dataset filters.
+
+    A dataset `filter` is applied as a row-level WHERE on the dataset's source
+    (see Filter in spec.md), so it MUST NOT use aggregate or window functions.
+    `AGG()` is reserved by Ossie SQL for measure evaluation and is an aggregate,
+    so it is rejected too. Dialects sqlglot cannot parse are skipped, and a
+    superseded OSSIE_SQL_2026 dialect entry is checked through the top-level
+    `sql` that replaces it.
+    """
+    if not isinstance(data, dict) or "datasets" not in data:
+        return []
+
+    model_name = data.get("name", "<unnamed>")
+    errors = []
+
+    for expression in iter_expressions(data):
+        if (
+            expression.kind != "dataset_filter"
+            or not expression.text
+            or expression.superseded_by is not None
+        ):
+            continue
+        context = expression.context(model_name)
+        tree, _ = _parse_sql_expression(expression.text, expression.dialect, context)
+        if tree is None:
+            continue
+
+        found = set()
+        for node in tree.walk():
+            if isinstance(node, exp.Window):
+                found.add("window function")
+            elif isinstance(node, exp.AggFunc):
+                found.add(f"aggregate function {node.sql_name()}()")
+            elif isinstance(node, exp.Anonymous) and str(node.name).upper() == "AGG":
+                found.add("aggregate function AGG()")
+        if found:
+            names = ", ".join(sorted(found))
+            errors.append(
+                f"[Filter] {context} uses {names}. A dataset filter is applied to "
+                f"each source row, so it must not use aggregate or window functions."
+            )
+
+    return errors
+
+
 def as_list(value: object) -> list:
     """The items of a list, or nothing for shapes that already failed the schema."""
     return value if isinstance(value, list) else []
@@ -982,6 +1028,7 @@ def validate_document(data, schema: dict) -> list[str]:
         errors.extend(validate_references(data))
         errors.extend(validate_relationship_column_arity(data))
         errors.extend(validate_metric_scoping(data))
+        errors.extend(validate_filter_expressions(data))
         errors.extend(validate_sql(data))
     if not errors and isinstance(data, dict) and "ontology" in data:
         errors.extend(validate_ontology(data))

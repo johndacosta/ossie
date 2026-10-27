@@ -293,13 +293,50 @@ class OssieMetric(BaseModel):
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
 
+class OssieTableSource(BaseModel):
+    """A table or view."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["table"]
+    identifier: str = Field(min_length=1)
+
+
+class OssieQuerySource(BaseModel):
+    """A query whose result is the dataset's rows. The query is engine-specific."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["query"]
+    dialects: list[OssieDialectExpression] = Field(min_length=1)
+
+
+class OssieFileSource(BaseModel):
+    """One or more files in a single format."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: Literal["file"]
+    format: str = Field(min_length=1)
+    locations: list[Annotated[str, Field(min_length=1)]] = Field(min_length=1)
+
+
+OssieStructuredSource = Annotated[
+    Union[OssieTableSource, OssieQuerySource, OssieFileSource], Field(discriminator="kind")
+]
+# A string keeps its meaning from earlier versions: a table/view reference or a query.
+OssieSource = Union[Annotated[str, Field(min_length=1)], OssieStructuredSource]
+
+
 class OssieDataset(BaseModel):
     """Logical dataset representing a business entity (fact or dimension table)."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     name: str = Field(..., min_length=1)
-    source: str = Field(..., min_length=1)
+    source: OssieSource
+    # Boolean expression over source columns; only rows for which it is true belong to the dataset.
+    filter: Optional[OssieExpression] = None
     # The schema gives both `minItems: 1`, as it does the relationship column arrays.
     # An empty key names nothing, and `Field` mirrors minItems as `min_length` here.
     primary_key: Optional[list[str]] = Field(default=None, min_length=1)

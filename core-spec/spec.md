@@ -161,7 +161,8 @@ Logical datasets represent business entities or concepts (fact and dimension tab
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | Yes | Unique identifier for the dataset |
-| `source` | string | Yes | Reference to underlying physical table/view (e.g., `database.schema.table`) or query |
+| `source` | string/object | Yes | Where the dataset's rows come from: a table/view, a query, or files. See [Source](#source). |
+| `filter` | expression object | No | Boolean expression over source columns; only rows for which it is true belong to the dataset. See [Filter](#filter). |
 | `primary_key` | array | No | Dataset fields that uniquely identify rows |
 | `unique_keys` | array of arrays | No | Array of unique key definitions, each a list of dataset fields |
 | `description` | string | No | Human-readable description |
@@ -169,6 +170,62 @@ Logical datasets represent business entities or concepts (fact and dimension tab
 | `fields` | array | No | Row-level attributes for grouping, filtering, and metric expressions |
 | `metrics` | array | No | Dataset-scoped metrics that semantically belong to this dataset; expressions reference its declared fields by single-part name and resolve entirely within it. See [Metric Scoping](#metric-scoping). |
 | `custom_extensions` | array | No | Vendor-specific attributes |
+
+### Source
+
+`source` is either a string or an object with a `kind`.
+
+```yaml
+# String: a table/view reference or a query, as in earlier versions
+source: sales.public.orders
+
+# Table or view
+source:
+  kind: table
+  identifier: sales.public.orders
+
+# Query, in one or more dialects
+source:
+  kind: query
+  dialects:
+    - dialect: SNOWFLAKE
+      expression: SELECT o.*, c.region FROM sales.public.orders o JOIN sales.public.customers c ON o.customer_id = c.id
+
+# Files
+source:
+  kind: file
+  format: parquet
+  locations:
+    - s3://analytics/orders/*.parquet
+```
+
+| `kind` | Consumers may assume | Consumers MAY reject the source if |
+|--------|----------------------|------------------------------------|
+| `table` | `identifier` names one table or view | they cannot resolve `identifier` |
+| `query` | Each entry is a complete query in its dialect; its result columns are the source columns | they support none of the listed dialects |
+| `file` | Every location holds data in `format` with the same columns | they cannot read `format` or a location |
+
+- A string `source` keeps its meaning from earlier versions. Producers SHOULD use `kind: query` for a query, so consumers do not have to guess.
+- Query text is not an OSSIE_SQL_2026 expression and is not portable. To restrict rows portably, use [`filter`](#filter).
+- A consumer that rejects a source MUST say so. It MUST NOT read the source as a different kind.
+- `identifier`, queries, and `locations` are references only. Ossie does not guarantee that two consumers reach the same physical data through them.
+
+### Filter
+
+`filter` is an optional [expression object](#expression-object) that returns a boolean. Only the source rows for which it is true belong to the dataset. Rows for which it is false or null do not.
+
+- Identifiers refer to columns of the dataset's `source`, as in field expressions. See [Name Resolution](#name-resolution).
+- The expression MUST NOT use aggregate or window functions.
+- Consumers MUST apply the filter wherever the dataset is used, as if the source were `SELECT * FROM <source> WHERE <filter>`. Fields, keys, metrics, and relationships all see only the filtered rows.
+- Use the top-level `sql` (OSSIE_SQL_2026) so that every consumer can apply the filter.
+
+```yaml
+datasets:
+  - name: customers
+    source: crm.public.customers
+    filter:
+      sql: delete_yn = 'N'   # rows flagged as deleted are not customers
+```
 
 ### Primary Key Examples
 
@@ -604,8 +661,8 @@ see [extensions/vendors.md](../extensions/vendors.md).
 
 An Ossie model has three levels of names:
 
-1. **Source columns.** The columns of the table, view, or query named by a
-   dataset's `source`. The Ossie document does not declare them.
+1. **Source columns.** The columns of the table, view, query, or files named
+   by a dataset's `source`. The Ossie document does not declare them.
 2. **Dataset fields.** The fields declared in a dataset's `fields`. Each field
    is defined in terms of that dataset's source columns, just as a view's
    `SELECT` list can only reference columns from its `FROM` clause. A dataset's
@@ -619,6 +676,7 @@ columns, so a dataset that declares no fields exposes nothing to them.
 | Where the name appears | What it refers to |
 |------------------------|-------------------|
 | Field `expression` | A column of the same dataset's `source` |
+| Dataset `filter` | A column of the same dataset's `source` |
 | `datasets[].primary_key`, `datasets[].unique_keys` | A field of the same dataset |
 | `relationships[].from_columns` | A field of the `from` dataset |
 | `relationships[].to_columns` | A field of the `to` dataset |
@@ -852,6 +910,8 @@ ai_context:
 ## Version History
 
 - **0.2.0.dev0** (Unreleased): In-development next minor release. Schema is mutable; do not depend on this version in production.
+  - `source` may be an object with `kind: table`, `kind: query`, or `kind: file`. String sources remain valid. See [Source](#source).
+  - Datasets may declare a `filter`. See [Filter](#filter).
   - Breaking: each standalone document contains one model directly at the root; the `semantic_model` array is removed.
   - Breaking: metric expressions, `primary_key`, `unique_keys`, and relationship `from_columns`/`to_columns` refer to dataset fields, not columns of the dataset's `source`. Model-scoped metric expressions must use qualified `dataset.field` references; dataset-scoped metric expressions use unqualified field names. Earlier versions did not specify this, and some converters read these names as source columns; those converters must now resolve them as fields. See [Name Resolution](#name-resolution).
 - **0.1.1** (2025-12-11): Initial release

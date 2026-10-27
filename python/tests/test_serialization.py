@@ -300,6 +300,7 @@ def _fully_populated_document() -> dict:
             {
                 "name": "orders",
                 "source": "db.s.orders",
+                "filter": dict(expression),
                 "description": "d",
                 "primary_key": ["id"],
                 "unique_keys": [["id"]],

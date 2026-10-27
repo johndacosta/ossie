@@ -34,9 +34,12 @@ from ossie import (
     OssieDocument,
     OssieExpression,
     OssieField,
+    OssieFileSource,
     OssieMetric,
+    OssieQuerySource,
     OssieRelationship,
     OssieSemanticModel,
+    OssieTableSource,
 )
 
 
@@ -439,6 +442,9 @@ def test_unknown_field_names_match_the_schema_allowlist() -> None:
         "Dimension": OssieDimension,
         "Field": OssieField,
         "Dataset": OssieDataset,
+        "TableSource": OssieTableSource,
+        "QuerySource": OssieQuerySource,
+        "FileSource": OssieFileSource,
         "Relationship": OssieRelationship,
         "Metric": OssieMetric,
         "SemanticModel": OssieSemanticModel,
@@ -531,6 +537,9 @@ def test_is_time_may_be_omitted() -> None:
 _CONSTRAINED_NODES = {
     "SemanticModel": OssieSemanticModel,
     "Dataset": OssieDataset,
+    "TableSource": OssieTableSource,
+    "QuerySource": OssieQuerySource,
+    "FileSource": OssieFileSource,
     "Field": OssieField,
     "Metric": OssieMetric,
     "Relationship": OssieRelationship,
@@ -574,7 +583,7 @@ def test_identifier_min_length_matches_core_schema() -> None:
                 checked += 1
 
     # Guards against the loop silently checking nothing if the schema moves.
-    assert checked == 13
+    assert checked == 16
 
 
 def test_unique_key_definitions_may_not_be_empty() -> None:
@@ -699,3 +708,35 @@ def test_relationship_columns_min_length() -> None:
 def test_semantic_model_datasets_min_length() -> None:
     with pytest.raises(ValidationError):
         OssieSemanticModel(name="model", datasets=[])
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("db.s.orders", str),
+        ({"kind": "table", "identifier": "db.s.orders"}, OssieTableSource),
+        (
+            {"kind": "query", "dialects": [{"dialect": "SNOWFLAKE", "expression": "SELECT 1"}]},
+            OssieQuerySource,
+        ),
+        ({"kind": "file", "format": "parquet", "locations": ["s3://b/*.parquet"]}, OssieFileSource),
+    ],
+)
+def test_dataset_source_forms_parse_by_kind(source: object, expected: type) -> None:
+    dataset = OssieDataset.model_validate({"name": "orders", "source": source})
+
+    assert isinstance(dataset.source, expected)
+
+
+def test_dataset_source_rejects_unknown_kind() -> None:
+    with pytest.raises(ValidationError):
+        OssieDataset.model_validate({"name": "o", "source": {"kind": "view", "identifier": "x"}})
+
+
+def test_dataset_filter_round_trips() -> None:
+    data = {"name": "customers", "source": "crm.customers", "filter": {"sql": "delete_yn = 'N'"}}
+
+    dataset = OssieDataset.model_validate(data)
+
+    assert dataset.filter == OssieExpression(sql="delete_yn = 'N'")
+    assert dataset.model_dump(exclude_none=True) == data

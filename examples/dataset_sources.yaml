@@ -1,0 +1,78 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Dataset sources and filters. See "Source" and "Filter" in core-spec/spec.md.
+version: 0.2.0.dev0
+name: Dataset sources
+datasets:
+# The application hides rows flagged as deleted. The filter keeps them out of
+# the dataset for every consumer, so a row count matches the application.
+- name: customers
+  source: crm.public.customers
+  filter:
+    sql: delete_yn = 'N'
+  primary_key: [customer_id]
+  fields:
+  - name: customer_id
+    expression:
+      sql: customer_id
+  metrics:
+  - name: customer_count
+    expression:
+      sql: COUNT(customer_id)
+
+# A subset of a table selected by a type column.
+- name: employees
+  source:
+    kind: table
+    identifier: hr.dbo.person
+  filter:
+    sql: person_type = 1
+  fields:
+  - name: person_id
+    expression:
+      sql: person_id
+
+# A query, when the rows need a join or a computed source. The query is
+# engine-specific.
+- name: eu_orders
+  source:
+    kind: query
+    dialects:
+    - dialect: SNOWFLAKE
+      expression: >-
+        SELECT o.order_id, o.amount, c.region
+        FROM sales.public.orders o
+        JOIN sales.public.customers c ON o.customer_id = c.id
+  filter:
+    sql: region = 'EU'
+  fields:
+  - name: order_id
+    expression:
+      sql: order_id
+
+# Parquet files in object storage.
+- name: events
+  source:
+    kind: file
+    format: parquet
+    locations:
+    - s3://analytics/events/*.parquet
+  fields:
+  - name: event_id
+    expression:
+      sql: event_id

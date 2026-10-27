@@ -199,6 +199,88 @@
       "required": ["name", "expression"],
       "additionalProperties": false
     },
+    "Source": {
+      "description": "Where a dataset's rows come from: a string (a table/view reference or a query, as in earlier versions) or a structured source identified by `kind`",
+      "if": {
+        "type": "string"
+      },
+      "then": {
+        "minLength": 1
+      },
+      "else": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/TableSource"
+          },
+        {
+          "$ref": "#/$defs/QuerySource"
+        },
+          {
+            "$ref": "#/$defs/FileSource"
+          }
+        ]
+      }
+    },
+    "TableSource": {
+      "type": "object",
+      "description": "A table or view",
+      "properties": {
+        "kind": {
+          "const": "table"
+        },
+        "identifier": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Table or view reference, e.g. database.schema.table"
+        }
+      },
+      "required": ["kind", "identifier"],
+      "additionalProperties": false
+    },
+    "QuerySource": {
+      "type": "object",
+      "description": "A query whose result is the dataset's rows. The query is engine-specific.",
+      "properties": {
+        "kind": {
+          "const": "query"
+        },
+        "dialects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DialectExpression"
+          },
+          "minItems": 1,
+          "description": "The query in one or more dialects"
+        }
+      },
+      "required": ["kind", "dialects"],
+      "additionalProperties": false
+    },
+    "FileSource": {
+      "type": "object",
+      "description": "One or more files in a single format",
+      "properties": {
+        "kind": {
+          "const": "file"
+        },
+        "format": {
+          "type": "string",
+          "minLength": 1,
+          "description": "File format, e.g. parquet"
+        },
+        "locations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "description": "File, object-store, or HTTPS locations; may include globs"
+        }
+      },
+      "required": ["kind", "format", "locations"],
+      "additionalProperties": false
+    },
     "Dataset": {
       "type": "object",
       "description": "Logical dataset representing a business entity (fact or dimension table)",
@@ -209,9 +291,11 @@
           "description": "Unique identifier for the dataset"
         },
         "source": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Reference to underlying physical table/view (database.schema.table) or query"
+          "$ref": "#/$defs/Source"
+        },
+        "filter": {
+          "$ref": "#/$defs/Expression",
+          "description": "Optional boolean expression over the source's columns. Only source rows for which it is true belong to the dataset."
         },
         "primary_key": {
           "type": "array",

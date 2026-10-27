@@ -1737,3 +1737,50 @@ def test_expression_context_names_the_declaring_element(kind, dataset_name, expe
     )
 
     assert expr.context("m") == expected
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "db.s.orders",
+        {"kind": "table", "identifier": "db.s.orders"},
+        {"kind": "query", "dialects": [{"dialect": "SNOWFLAKE", "expression": "SELECT * FROM o"}]},
+        {"kind": "file", "format": "parquet", "locations": ["s3://b/o/*.parquet"]},
+    ],
+)
+def test_schema_accepts_each_source_form(core_schema: dict, source: object) -> None:
+    dataset = {**_ORDERS, "source": source, "filter": {"sql": "deleted = FALSE"}}
+
+    assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        {"kind": "view", "identifier": "db.s.orders"},
+        {"kind": "table"},
+        {"kind": "query", "dialects": []},
+        {"kind": "file", "format": "parquet", "locations": []},
+        {"identifier": "db.s.orders"},
+    ],
+)
+def test_schema_rejects_malformed_sources(core_schema: dict, source: object) -> None:
+    dataset = {**_ORDERS, "source": source}
+
+    assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) != []
+
+
+@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
+def test_sql_checks_cover_dataset_filters() -> None:
+    dataset = {**_ORDERS, "filter": {"sql": "deleted = "}}
+
+    errors = _VALIDATE.validate_sql(_document([dataset], []))
+
+    assert len(errors) == 1
+    assert "Filter on dataset 'orders'" in errors[0]
+
+
+def test_dataset_sources_example_is_valid(core_schema: dict) -> None:
+    example = Path(__file__).parents[2] / "examples" / "dataset_sources.yaml"
+
+    assert _VALIDATE.validate_document(yaml.safe_load(example.read_text()), core_schema) == []

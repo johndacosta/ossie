@@ -423,7 +423,7 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
     return error
 
 
-ExpressionKind = Literal["field", "dataset_metric", "model_metric"]
+ExpressionKind = Literal["field", "dataset_filter", "dataset_metric", "model_metric"]
 
 
 @dataclass(frozen=True)
@@ -431,7 +431,7 @@ class Expression:
     """An expression and its context within a document.
 
     `kind` identifies the declaring element, and `name` identifies the field
-    or metric. `dialect` is OSSIE_SQL_2026 for portable `sql` expressions,
+    or metric, or is "filter" for a dataset filter. `dialect` is OSSIE_SQL_2026 for portable `sql` expressions,
     or the dialect's label otherwise. `field_names` contains the enclosing
     dataset's field names, or is empty for model-scoped metrics.
     `superseded_by` is the authoritative top-level `sql` text when this is an
@@ -450,6 +450,8 @@ class Expression:
     def context(self, model_name: str) -> str:
         if self.kind == "field":
             label = f"Field '{self.dataset_name}.{self.name}'"
+        elif self.kind == "dataset_filter":
+            label = f"Filter on dataset '{self.dataset_name}'"
         elif self.kind == "dataset_metric":
             label = f"Metric '{self.dataset_name}.{self.name}'"
         else:
@@ -499,6 +501,9 @@ def iter_expressions(data: dict) -> Iterator[Expression]:
         field_names = frozenset(
             f["name"].casefold() for f in dataset.get("fields", []) if f.get("name")
         )
+        if isinstance(dataset.get("filter"), dict):
+            filter_member = {"name": "filter", "expression": dataset["filter"]}
+            yield from _expressions_in(filter_member, "dataset_filter", dataset_name, field_names)
         for field in dataset.get("fields", []):
             yield from _expressions_in(field, "field", dataset_name, field_names)
         for metric in dataset.get("metrics", []):

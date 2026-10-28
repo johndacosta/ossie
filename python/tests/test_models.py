@@ -732,11 +732,3 @@ def test_dataset_source_rejects_unknown_kind() -> None:
     with pytest.raises(ValidationError):
         OssieDataset.model_validate({"name": "o", "source": {"kind": "view", "identifier": "x"}})
 
-
-def test_dataset_filter_round_trips() -> None:
-    data = {"name": "customers", "source": "crm.customers", "filter": {"sql": "delete_yn = 'N'"}}
-
-    dataset = OssieDataset.model_validate(data)
-
-    assert dataset.filter == OssieExpression(sql="delete_yn = 'N'")
-    assert dataset.model_dump(exclude_none=True) == data

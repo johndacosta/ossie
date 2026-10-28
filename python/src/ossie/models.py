@@ -335,8 +335,6 @@ class OssieDataset(BaseModel):
 
     name: str = Field(..., min_length=1)
     source: OssieSource
-    # Boolean expression over source columns; only rows for which it is true belong to the dataset.
-    filter: Optional[OssieExpression] = None
     # The schema gives both `minItems: 1`, as it does the relationship column arrays.
     # An empty key names nothing, and `Field` mirrors minItems as `min_length` here.
     primary_key: Optional[list[str]] = Field(default=None, min_length=1)

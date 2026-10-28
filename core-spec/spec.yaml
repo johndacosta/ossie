@@ -119,13 +119,6 @@ datasets:
     #   locations: [s3://bucket/path/*.parquet]
     source: string
 
-    # Optional: Boolean expression over the source's columns
-    # Only rows for which it is true belong to the dataset
-    # filter:
-    #   sql: delete_yn = 'N'
-    filter:
-      sql: string
-
     # Optional: Dataset fields that uniquely identify rows
     # These are fields declared in the dataset, not columns of its source
     # Can be a single field or a composite of multiple fields

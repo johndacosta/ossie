@@ -557,7 +557,7 @@ def validate_sql_expression(expr: str, dialect: str, context: str) -> str | None
     return error
 
 
-ExpressionKind = Literal["field", "dataset_filter", "dataset_metric", "model_metric"]
+ExpressionKind = Literal["field", "dataset_metric", "model_metric"]
 
 
 @dataclass(frozen=True)
@@ -565,7 +565,7 @@ class Expression:
     """An expression and its context within a document.
 
     `kind` identifies the declaring element, and `name` identifies the field
-    or metric, or is "filter" for a dataset filter. `dialect` is OSSIE_SQL_2026 for portable `sql` expressions,
+    or metric. `dialect` is OSSIE_SQL_2026 for portable `sql` expressions,
     or the dialect's label otherwise. `field_names` contains the enclosing
     dataset's field names, or is empty for model-scoped metrics.
     `superseded_by` is the authoritative top-level `sql` text when this is an
@@ -584,8 +584,6 @@ class Expression:
     def context(self, model_name: str) -> str:
         if self.kind == "field":
             label = f"Field '{self.dataset_name}.{self.name}'"
-        elif self.kind == "dataset_filter":
-            label = f"Filter on dataset '{self.dataset_name}'"
         elif self.kind == "dataset_metric":
             label = f"Metric '{self.dataset_name}.{self.name}'"
         else:
@@ -633,9 +631,6 @@ def iter_expressions(data: dict) -> Iterator[Expression]:
     for dataset in data.get("datasets", []):
         dataset_name = dataset.get("name", "<unnamed>")
         field_names = dataset_field_names(dataset)
-        if isinstance(dataset.get("filter"), dict):
-            filter_member = {"name": "filter", "expression": dataset["filter"]}
-            yield from _expressions_in(filter_member, "dataset_filter", dataset_name, field_names)
         for field in dataset.get("fields", []):
             yield from _expressions_in(field, "field", dataset_name, field_names)
         for metric in dataset.get("metrics", []):
@@ -776,52 +771,6 @@ def validate_metric_scoping(data: dict) -> list[str]:
         ):
             continue
         errors.extend(scope_errors(expression))
-
-    return errors
-
-
-def validate_filter_expressions(data: dict) -> list[str]:
-    """Reject aggregate and window functions in dataset filters.
-
-    A dataset `filter` is applied as a row-level WHERE on the dataset's source
-    (see Filter in spec.md), so it MUST NOT use aggregate or window functions.
-    `AGG()` is reserved by Ossie SQL for measure evaluation and is an aggregate,
-    so it is rejected too. Dialects sqlglot cannot parse are skipped, and a
-    superseded OSSIE_SQL_2026 dialect entry is checked through the top-level
-    `sql` that replaces it.
-    """
-    if not isinstance(data, dict) or "datasets" not in data:
-        return []
-
-    model_name = data.get("name", "<unnamed>")
-    errors = []
-
-    for expression in iter_expressions(data):
-        if (
-            expression.kind != "dataset_filter"
-            or not expression.text
-            or expression.superseded_by is not None
-        ):
-            continue
-        context = expression.context(model_name)
-        tree, _ = _parse_sql_expression(expression.text, expression.dialect, context)
-        if tree is None:
-            continue
-
-        found = set()
-        for node in tree.walk():
-            if isinstance(node, exp.Window):
-                found.add("window function")
-            elif isinstance(node, exp.AggFunc):
-                found.add(f"aggregate function {node.sql_name()}()")
-            elif isinstance(node, exp.Anonymous) and str(node.name).upper() == "AGG":
-                found.add("aggregate function AGG()")
-        if found:
-            names = ", ".join(sorted(found))
-            errors.append(
-                f"[Filter] {context} uses {names}. A dataset filter is applied to "
-                f"each source row, so it must not use aggregate or window functions."
-            )
 
     return errors
 
@@ -1028,7 +977,6 @@ def validate_document(data, schema: dict) -> list[str]:
         errors.extend(validate_references(data))
         errors.extend(validate_relationship_column_arity(data))
         errors.extend(validate_metric_scoping(data))
-        errors.extend(validate_filter_expressions(data))
         errors.extend(validate_sql(data))
     if not errors and isinstance(data, dict) and "ontology" in data:
         errors.extend(validate_ontology(data))

@@ -293,10 +293,6 @@
         "source": {
           "$ref": "#/$defs/Source"
         },
-        "filter": {
-          "$ref": "#/$defs/Expression",
-          "description": "Optional boolean expression over the source's columns. Only source rows for which it is true belong to the dataset."
-        },
         "primary_key": {
           "type": "array",
           "items": {

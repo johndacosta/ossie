@@ -147,7 +147,7 @@ Ossie expressions support the following SQL constructs within any expression:
 | :---- | :---- |
 | `SELECT` / `FROM` / `JOIN` | Handled by semantic layer |
 | `GROUP BY` | Controlled by grain specification |
-| `WHERE` | Use the dataset [`filter`](spec.md#filter) property instead |
+| `WHERE` | Use filter property instead |
 | Subqueries | Use field references instead, or EXISTS\_IN() for filtering based on a subquery. |
 | CTEs | Use field references instead |
 | `UNION` / `INTERSECT` / `EXCEPT` | Not applicable to expressions |

@@ -1931,7 +1931,6 @@ def test_iter_expressions_yields_empty_text_and_skips_missing_expressions() -> N
     ("kind", "dataset_name", "expected"),
     [
         ("field", "orders", "Field 'orders.x' in model 'm' (SNOWFLAKE)"),
-        ("dataset_filter", "orders", "Filter on dataset 'orders' in model 'm' (SNOWFLAKE)"),
         ("dataset_metric", "orders", "Metric 'orders.x' in model 'm' (SNOWFLAKE)"),
         ("model_metric", "", "Metric 'x' in model 'm' (SNOWFLAKE)"),
     ],
@@ -1955,7 +1954,7 @@ def test_expression_context_names_the_declaring_element(kind, dataset_name, expe
     ],
 )
 def test_schema_accepts_each_source_form(core_schema: dict, source: object) -> None:
-    dataset = {**_ORDERS, "source": source, "filter": {"sql": "deleted = FALSE"}}
+    dataset = {**_ORDERS, "source": source}
 
     assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) == []
 
@@ -1974,70 +1973,6 @@ def test_schema_rejects_malformed_sources(core_schema: dict, source: object) -> 
     dataset = {**_ORDERS, "source": source}
 
     assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) != []
-
-
-@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
-def test_sql_checks_cover_dataset_filters() -> None:
-    dataset = {**_ORDERS, "filter": {"sql": "deleted = "}}
-
-    errors = _VALIDATE.validate_sql(_document([dataset], []))
-
-    assert len(errors) == 1
-    assert "Filter on dataset 'orders'" in errors[0]
-
-
-@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
-@pytest.mark.parametrize(
-    ("sql", "expected"),
-    [
-        ("SUM(amount) > 10", "aggregate function SUM()"),
-        ("COUNT(*) > 0", "aggregate function COUNT()"),
-        ("amount > AVG(amount)", "aggregate function AVG()"),
-        ("AGG(revenue) > 0", "aggregate function AGG()"),
-        ("ROW_NUMBER() OVER (ORDER BY id) = 1", "window function"),
-        ("amount > SUM(amount) OVER (PARTITION BY region)", "window function"),
-    ],
-)
-def test_dataset_filter_rejects_aggregate_and_window_functions(sql: str, expected: str) -> None:
-    dataset = {**_ORDERS, "filter": {"sql": sql}}
-
-    errors = _VALIDATE.validate_filter_expressions(_document([dataset], []))
-
-    assert len(errors) == 1
-    assert "Filter on dataset 'orders'" in errors[0]
-    assert expected in errors[0]
-
-
-@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
-def test_dataset_filter_rejects_aggregates_in_dialect_entries() -> None:
-    dataset = {
-        **_ORDERS,
-        "filter": {"dialects": [{"dialect": "SNOWFLAKE", "expression": "MAX(amount) > 0"}]},
-    }
-
-    errors = _VALIDATE.validate_filter_expressions(_document([dataset], []))
-
-    assert len(errors) == 1
-    assert "(SNOWFLAKE)" in errors[0]
-
-
-@pytest.mark.skipif(not _VALIDATE.SQLGLOT_AVAILABLE, reason="sqlglot is not installed")
-@pytest.mark.parametrize(
-    "sql",
-    [
-        "delete_yn = 'N'",
-        "status IN ('open', 'closed') AND COALESCE(amount, 0) > 0",
-        "LOWER(region) LIKE 'north%'",
-    ],
-)
-def test_dataset_filter_accepts_row_level_expressions(sql: str) -> None:
-    dataset = {**_ORDERS, "filter": {"sql": sql}}
-
-    assert _VALIDATE.validate_filter_expressions(_document([dataset], [])) == []
-
-
-def test_filter_check_ignores_metrics_and_fields() -> None:
-    assert _VALIDATE.validate_filter_expressions(_document([_ORDERS], [])) == []
 
 
 def test_dataset_sources_example_is_valid(core_schema: dict) -> None:

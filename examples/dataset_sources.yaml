@@ -15,33 +15,24 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Dataset sources and filters. See "Source" and "Filter" in core-spec/spec.md.
+# Dataset sources. See "Source" in core-spec/spec.md.
 version: 0.2.0.dev0
 name: Dataset sources
 datasets:
-# The application hides rows flagged as deleted. The filter keeps them out of
-# the dataset for every consumer, so a row count matches the application.
+# A string names a table or view, as in earlier versions.
 - name: customers
   source: crm.public.customers
-  filter:
-    sql: delete_yn = 'N'
   primary_key: [customer_id]
   fields:
   - name: customer_id
     expression:
       sql: customer_id
-  metrics:
-  - name: customer_count
-    expression:
-      sql: COUNT(customer_id)
 
-# A subset of a table selected by a type column.
+# The same kind of reference with an explicit kind.
 - name: employees
   source:
     kind: table
     identifier: hr.dbo.person
-  filter:
-    sql: person_type = 1
   fields:
   - name: person_id
     expression:
@@ -58,8 +49,7 @@ datasets:
         SELECT o.order_id, o.amount, c.region
         FROM sales.public.orders o
         JOIN sales.public.customers c ON o.customer_id = c.id
-  filter:
-    sql: region = 'EU'
+        WHERE c.region = 'EU'
   fields:
   - name: order_id
     expression:

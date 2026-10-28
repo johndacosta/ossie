@@ -28,15 +28,20 @@ datasets:
     expression:
       sql: customer_id
 
-# The same kind of reference with an explicit kind.
-- name: employees
+# A table named by its parts. Only the list form can name a table whose own
+# name contains a dot, as Apache Polaris allows. The connection that reaches it
+# is the consumer's; a producer keeps its own in custom_extensions.
+- name: eu_customers
   source:
     kind: table
-    identifier: hr.dbo.person
+    identifier: [prod, sales, eu.customers]
+  custom_extensions:
+  - vendor_name: BI_TOOL
+    data: '{"connection": "warehouse_prod"}'
   fields:
-  - name: person_id
+  - name: customer_id
     expression:
-      sql: person_id
+      sql: customer_id
 
 # A query, when the rows need a join or a computed source. The query is
 # engine-specific.

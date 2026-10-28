@@ -101,11 +101,12 @@ datasets:
   - name: string
 
     # Required: Where the dataset's rows come from
-    # A string is a table/view reference (database_name.schema_name.table_name)
-    # or a query, as in earlier versions. Or use an object with a kind:
+    # A string names a table/view (database_name.schema_name.table_name),
+    # split on every "."; earlier versions also allowed a query here.
+    # Or use an object with a kind:
     # source:
     #   kind: table
-    #   identifier: database_name.schema_name.table_name
+    #   identifier: [database_name, schema_name, table_name]
     #
     # source:
     #   kind: query

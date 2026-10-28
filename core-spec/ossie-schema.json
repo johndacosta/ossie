@@ -200,7 +200,7 @@
       "additionalProperties": false
     },
     "Source": {
-      "description": "Where a dataset's rows come from: a string (a table/view reference or a query, as in earlier versions) or a structured source identified by `kind`",
+      "description": "Where a dataset's rows come from: a string (a table/view reference split on every '.', or a query, as in earlier versions) or a structured source identified by `kind`. Consumers reject a kind they do not support.",
       "if": {
         "type": "string"
       },
@@ -212,9 +212,9 @@
           {
             "$ref": "#/$defs/TableSource"
           },
-        {
-          "$ref": "#/$defs/QuerySource"
-        },
+          {
+            "$ref": "#/$defs/QuerySource"
+          },
           {
             "$ref": "#/$defs/FileSource"
           }
@@ -229,9 +229,13 @@
           "const": "table"
         },
         "identifier": {
-          "type": "string",
-          "minLength": 1,
-          "description": "Table or view reference, e.g. database.schema.table"
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "description": "The catalog's name for the table or view as a list of parts, outermost first, e.g. [database, schema, table]. Each part is the exact stored name, unquoted, and may contain '.'."
         }
       },
       "required": ["kind", "identifier"],

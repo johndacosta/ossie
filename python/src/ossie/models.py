@@ -294,12 +294,13 @@ class OssieMetric(BaseModel):
 
 
 class OssieTableSource(BaseModel):
-    """A table or view."""
+    """A table or view, named by its parts, outermost first."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     kind: Literal["table"]
-    identifier: str = Field(min_length=1)
+    # Each part is the exact stored name: unquoted, and it may contain ".".
+    identifier: list[Annotated[str, Field(min_length=1)]] = Field(min_length=1)
 
 
 class OssieQuerySource(BaseModel):
@@ -324,7 +325,8 @@ class OssieFileSource(BaseModel):
 OssieStructuredSource = Annotated[
     Union[OssieTableSource, OssieQuerySource, OssieFileSource], Field(discriminator="kind")
 ]
-# A string keeps its meaning from earlier versions: a table/view reference or a query.
+# A string keeps its meaning from earlier versions: a table/view reference
+# (its parts split on every ".") or a query.
 OssieSource = Union[Annotated[str, Field(min_length=1)], OssieStructuredSource]
 
 

@@ -175,13 +175,13 @@ Logical datasets represent business entities or concepts (fact and dimension tab
 `source` is either a string or an object with a `kind`.
 
 ```yaml
-# String: a table/view reference or a query, as in earlier versions
-source: sales.public.orders
-
-# Table or view
+# Table or view, named by its parts
 source:
   kind: table
-  identifier: sales.public.orders
+  identifier: [sales, public, orders]
+
+# The same table as a string
+source: sales.public.orders
 
 # Query, in one or more dialects
 source:
@@ -200,14 +200,50 @@ source:
 
 | `kind` | Consumers may assume | Consumers MAY reject the source if |
 |--------|----------------------|------------------------------------|
-| `table` | `identifier` names one table or view | they cannot resolve `identifier` |
+| `table` | `identifier` names one table or view | they cannot resolve `identifier` (see [Resolving a Table](#resolving-a-table)) |
 | `query` | Each entry is a complete query in its dialect; its result columns are the source columns | they support none of the listed dialects |
 | `file` | Every location holds data in `format` with the same columns | they cannot read `format` or a location |
 
-- A string `source` keeps its meaning from earlier versions. Producers SHOULD use `kind: query` for a query, so consumers do not have to guess.
-- Query text is not an OSSIE_SQL_2026 expression and is not portable.
+- Later versions may add kinds, such as a dataset in another Ossie model. A consumer MUST reject a source whose `kind` it does not support.
 - A consumer that rejects a source MUST say so. It MUST NOT read the source as a different kind.
+- Query text is not an OSSIE_SQL_2026 expression and is not portable.
 - `identifier`, queries, and `locations` are references only. Ossie does not guarantee that two consumers reach the same physical data through them.
+
+#### Table Identifier
+
+`identifier` is the catalog's name for the table or view, as a list of parts, outermost first: for example a catalog or database, one or more namespace levels, and the table.
+
+- It has as many parts as the catalog uses. Ossie does not fix the number of parts or name the levels.
+- Each part is the name exactly as the catalog stores it. Parts are not quoted or escaped, and a part may contain `.`.
+- A string `source` that names a table is shorthand for `kind: table`. Its parts are the string split on every `.`, so a name whose part contains a `.` needs the list form.
+- Earlier versions also allowed a query as a string `source`. Producers SHOULD write a query as `kind: query`. Consumers MAY reject a string that does not name a table.
+
+```yaml
+# In a catalog named prod, table eu.orders in namespace sales
+identifier: [prod, sales, eu.orders]
+
+# A different table: orders in the nested namespace sales.eu
+identifier: [prod, sales, eu, orders]
+```
+
+#### Resolving a Table
+
+Ossie names tables, not connections. Each consumer resolves `identifier` against the connections it already has.
+
+- A consumer matches the leading parts of `identifier`, such as a catalog or database name, to one of its connections, and finds the remaining parts within it. How it maps parts to connections is the consumer's own configuration.
+- If no connection matches, or more than one does, the consumer MUST report it. It MUST NOT pick one.
+- `identifier` MUST NOT carry connection details, such as a connection name, host, or credentials. A producer that needs them, for example to round-trip its own model, puts them in the dataset's `custom_extensions`.
+
+```yaml
+datasets:
+  - name: orders
+    source:
+      kind: table
+      identifier: [sales, public, orders]
+    custom_extensions:
+      - vendor_name: BI_TOOL
+        data: '{"connection": "warehouse_prod"}'   # read back only by BI_TOOL
+```
 
 ### Primary Key Examples
 
@@ -891,7 +927,7 @@ ai_context:
 ## Version History
 
 - **0.2.0.dev0** (Unreleased): In-development next minor release. Schema is mutable; do not depend on this version in production.
-  - `source` may be an object with `kind: table`, `kind: query`, or `kind: file`. String sources remain valid. See [Source](#source).
+  - `source` may be an object with `kind: table`, `kind: query`, or `kind: file`. A table's `identifier` is a list of name parts. String sources remain valid; a string that names a table splits on every `.`. Consumers reject a kind they do not support. See [Source](#source).
   - Breaking: each standalone document contains one model directly at the root; the `semantic_model` array is removed.
   - Breaking: metric expressions, `primary_key`, `unique_keys`, and relationship `from_columns`/`to_columns` refer to dataset fields, not columns of the dataset's `source`. Model-scoped metric expressions must use qualified `dataset.field` references; dataset-scoped metric expressions use unqualified field names. Earlier versions did not specify this, and some converters read these names as source columns; those converters must now resolve them as fields. See [Name Resolution](#name-resolution).
 - **0.1.1** (2025-12-11): Initial release

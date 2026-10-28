@@ -714,7 +714,7 @@ def test_semantic_model_datasets_min_length() -> None:
     ("source", "expected"),
     [
         ("db.s.orders", str),
-        ({"kind": "table", "identifier": "db.s.orders"}, OssieTableSource),
+        ({"kind": "table", "identifier": ["db", "s", "orders"]}, OssieTableSource),
         (
             {"kind": "query", "dialects": [{"dialect": "SNOWFLAKE", "expression": "SELECT 1"}]},
             OssieQuerySource,
@@ -730,5 +730,21 @@ def test_dataset_source_forms_parse_by_kind(source: object, expected: type) -> N
 
 def test_dataset_source_rejects_unknown_kind() -> None:
     with pytest.raises(ValidationError):
-        OssieDataset.model_validate({"name": "o", "source": {"kind": "view", "identifier": "x"}})
+        OssieDataset.model_validate({"name": "o", "source": {"kind": "view", "identifier": ["x"]}})
 
+
+def test_table_identifier_keeps_parts_that_contain_dots() -> None:
+    source = {"kind": "table", "identifier": ["prod", "sales", "eu.orders"]}
+
+    dataset = OssieDataset.model_validate({"name": "orders", "source": source})
+
+    assert dataset.source.identifier == ["prod", "sales", "eu.orders"]
+    assert dataset.model_dump(exclude_none=True)["source"] == source
+
+
+@pytest.mark.parametrize("identifier", ["db.s.orders", [], ["db", ""]])
+def test_table_identifier_must_be_a_list_of_non_empty_parts(identifier: object) -> None:
+    with pytest.raises(ValidationError):
+        OssieDataset.model_validate(
+            {"name": "o", "source": {"kind": "table", "identifier": identifier}}
+        )

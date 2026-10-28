@@ -1948,7 +1948,8 @@ def test_expression_context_names_the_declaring_element(kind, dataset_name, expe
     "source",
     [
         "db.s.orders",
-        {"kind": "table", "identifier": "db.s.orders"},
+        {"kind": "table", "identifier": ["db", "s", "orders"]},
+        {"kind": "table", "identifier": ["prod", "sales", "eu.orders"]},
         {"kind": "query", "dialects": [{"dialect": "SNOWFLAKE", "expression": "SELECT * FROM o"}]},
         {"kind": "file", "format": "parquet", "locations": ["s3://b/o/*.parquet"]},
     ],
@@ -1962,11 +1963,14 @@ def test_schema_accepts_each_source_form(core_schema: dict, source: object) -> N
 @pytest.mark.parametrize(
     "source",
     [
-        {"kind": "view", "identifier": "db.s.orders"},
+        {"kind": "view", "identifier": ["db", "s", "orders"]},
         {"kind": "table"},
+        {"kind": "table", "identifier": "db.s.orders"},
+        {"kind": "table", "identifier": []},
+        {"kind": "table", "identifier": ["db", ""]},
         {"kind": "query", "dialects": []},
         {"kind": "file", "format": "parquet", "locations": []},
-        {"identifier": "db.s.orders"},
+        {"identifier": ["db", "s", "orders"]},
     ],
 )
 def test_schema_rejects_malformed_sources(core_schema: dict, source: object) -> None:

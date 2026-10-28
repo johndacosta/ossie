@@ -19,7 +19,7 @@
 version: 0.2.0.dev0
 name: Dataset sources
 datasets:
-# A string names a table or view, as in earlier versions.
+# A string in shorthand form names a table: its parts are split on ".".
 - name: customers
   source: crm.public.customers
   primary_key: [customer_id]
@@ -28,9 +28,9 @@ datasets:
     expression:
       sql: customer_id
 
-# A table named by its parts. Only the list form can name a table whose own
-# name contains a dot, as Apache Polaris allows. The connection that reaches it
-# is the consumer's; a producer keeps its own in custom_extensions.
+# The list form names any table, including one whose own name contains a dot,
+# as Apache Polaris allows. The connection that reaches it is each consumer's;
+# a producer that needs its own keeps it in custom_extensions, never secrets.
 - name: eu_customers
   source:
     kind: table
@@ -43,31 +43,12 @@ datasets:
     expression:
       sql: customer_id
 
-# A query, when the rows need a join or a computed source. The query is
-# engine-specific.
-- name: eu_orders
+# Quote a part that YAML would otherwise read as a number.
+- name: orders_2024
   source:
-    kind: query
-    dialects:
-    - dialect: SNOWFLAKE
-      expression: >-
-        SELECT o.order_id, o.amount, c.region
-        FROM sales.public.orders o
-        JOIN sales.public.customers c ON o.customer_id = c.id
-        WHERE c.region = 'EU'
+    kind: table
+    identifier: [sales, "2024", orders]
   fields:
   - name: order_id
     expression:
       sql: order_id
-
-# Parquet files in object storage.
-- name: events
-  source:
-    kind: file
-    format: parquet
-    locations:
-    - s3://analytics/events/*.parquet
-  fields:
-  - name: event_id
-    expression:
-      sql: event_id

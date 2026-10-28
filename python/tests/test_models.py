@@ -34,12 +34,11 @@ from ossie import (
     OssieDocument,
     OssieExpression,
     OssieField,
-    OssieFileSource,
     OssieMetric,
-    OssieQuerySource,
     OssieRelationship,
     OssieSemanticModel,
     OssieTableSource,
+    table_identifier,
 )
 
 
@@ -443,8 +442,6 @@ def test_unknown_field_names_match_the_schema_allowlist() -> None:
         "Field": OssieField,
         "Dataset": OssieDataset,
         "TableSource": OssieTableSource,
-        "QuerySource": OssieQuerySource,
-        "FileSource": OssieFileSource,
         "Relationship": OssieRelationship,
         "Metric": OssieMetric,
         "SemanticModel": OssieSemanticModel,
@@ -538,8 +535,6 @@ _CONSTRAINED_NODES = {
     "SemanticModel": OssieSemanticModel,
     "Dataset": OssieDataset,
     "TableSource": OssieTableSource,
-    "QuerySource": OssieQuerySource,
-    "FileSource": OssieFileSource,
     "Field": OssieField,
     "Metric": OssieMetric,
     "Relationship": OssieRelationship,
@@ -583,7 +578,7 @@ def test_identifier_min_length_matches_core_schema() -> None:
                 checked += 1
 
     # Guards against the loop silently checking nothing if the schema moves.
-    assert checked == 16
+    assert checked == 13
 
 
 def test_unique_key_definitions_may_not_be_empty() -> None:
@@ -710,16 +705,12 @@ def test_semantic_model_datasets_min_length() -> None:
         OssieSemanticModel(name="model", datasets=[])
 
 
+
 @pytest.mark.parametrize(
     ("source", "expected"),
     [
         ("db.s.orders", str),
         ({"kind": "table", "identifier": ["db", "s", "orders"]}, OssieTableSource),
-        (
-            {"kind": "query", "dialects": [{"dialect": "SNOWFLAKE", "expression": "SELECT 1"}]},
-            OssieQuerySource,
-        ),
-        ({"kind": "file", "format": "parquet", "locations": ["s3://b/*.parquet"]}, OssieFileSource),
     ],
 )
 def test_dataset_source_forms_parse_by_kind(source: object, expected: type) -> None:
@@ -728,9 +719,10 @@ def test_dataset_source_forms_parse_by_kind(source: object, expected: type) -> N
     assert isinstance(dataset.source, expected)
 
 
-def test_dataset_source_rejects_unknown_kind() -> None:
-    with pytest.raises(ValidationError):
-        OssieDataset.model_validate({"name": "o", "source": {"kind": "view", "identifier": ["x"]}})
+@pytest.mark.parametrize("kind", ["view", "query", "file"])
+def test_dataset_source_rejects_unknown_kind(kind: str) -> None:
+    with pytest.raises(ValidationError, match="'table'"):
+        OssieDataset.model_validate({"name": "o", "source": {"kind": kind, "identifier": ["x"]}})
 
 
 def test_table_identifier_keeps_parts_that_contain_dots() -> None:
@@ -742,9 +734,44 @@ def test_table_identifier_keeps_parts_that_contain_dots() -> None:
     assert dataset.model_dump(exclude_none=True)["source"] == source
 
 
-@pytest.mark.parametrize("identifier", ["db.s.orders", [], ["db", ""]])
-def test_table_identifier_must_be_a_list_of_non_empty_parts(identifier: object) -> None:
+@pytest.mark.parametrize(
+    "identifier",
+    ["db.s.orders", [], ["db", ""], ["db", "   "], ["db", 2024], ["db", "a\nb"], ["db", "a\x00b"], ["db", "a\u2028b"]],
+)
+def test_table_identifier_must_be_a_list_of_valid_parts(identifier: object) -> None:
     with pytest.raises(ValidationError):
         OssieDataset.model_validate(
             {"name": "o", "source": {"kind": "table", "identifier": identifier}}
         )
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("orders", ["orders"]),
+        ("sales.public.orders", ["sales", "public", "orders"]),
+        (OssieTableSource(kind="table", identifier=["prod", "sales", "eu.orders"]), ["prod", "sales", "eu.orders"]),
+        ("a..b", None),
+        (".a", None),
+        ("a.", None),
+        ("my table", None),
+        ("SELECT * FROM t", None),
+        ('"my.table"', None),
+        ("`my.table`", None),
+        ("[my.table]", None),
+        ("db.t\n", None),
+    ],
+)
+def test_table_identifier_reads_shorthand_only(source: object, expected: object) -> None:
+    assert table_identifier(source) == expected
+
+
+def test_shorthand_and_validator_agree() -> None:
+    root = Path(__file__).parents[2]
+
+    def pattern_line(path: Path) -> str:
+        return next(l for l in path.read_text().splitlines() if l.startswith("_SHORTHAND_PART = "))
+
+    assert pattern_line(root / "python" / "src" / "ossie" / "models.py") == pattern_line(
+        root / "validation" / "validate.py"
+    )

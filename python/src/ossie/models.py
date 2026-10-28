@@ -17,11 +17,13 @@
 
 import json
 import math
+import re
 from enum import Enum
 from typing import Annotated, Any, Literal, Optional, Union
 
 import yaml
 from pydantic import (
+    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
@@ -293,6 +295,22 @@ class OssieMetric(BaseModel):
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
 
+# Control characters and the Unicode line/paragraph separators are never part of a name.
+_FORBIDDEN_IN_PART = re.compile("[\u0000-\u001f\u007f-\u009f\u2028\u2029]")
+# One shorthand part: no ".", whitespace, control character, quote, bracket, "(", ")", ";" or ",".
+# Parts exclude ".", so the full match runs in linear time.
+_SHORTHAND_PART = "[^.\\s\"'`\\[\\]();,\u0000-\u001f\u007f-\u009f]+"
+_SHORTHAND = re.compile(f"{_SHORTHAND_PART}(?:\\.{_SHORTHAND_PART})*")
+
+
+def _check_identifier_part(part: str) -> str:
+    if not part.strip():
+        raise ValueError("identifier parts must not be blank")
+    if _FORBIDDEN_IN_PART.search(part):
+        raise ValueError("identifier parts must not contain control characters")
+    return part
+
+
 class OssieTableSource(BaseModel):
     """A table or view, named by its parts, outermost first."""
 
@@ -300,34 +318,29 @@ class OssieTableSource(BaseModel):
 
     kind: Literal["table"]
     # Each part is the exact stored name: unquoted, and it may contain ".".
-    identifier: list[Annotated[str, Field(min_length=1)]] = Field(min_length=1)
+    identifier: list[Annotated[str, Field(min_length=1), AfterValidator(_check_identifier_part)]] = Field(
+        min_length=1
+    )
 
 
-class OssieQuerySource(BaseModel):
-    """A query whose result is the dataset's rows. The query is engine-specific."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    kind: Literal["query"]
-    dialects: list[OssieDialectExpression] = Field(min_length=1)
-
-
-class OssieFileSource(BaseModel):
-    """One or more files in a single format."""
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    kind: Literal["file"]
-    format: str = Field(min_length=1)
-    locations: list[Annotated[str, Field(min_length=1)]] = Field(min_length=1)
-
-
-OssieStructuredSource = Annotated[
-    Union[OssieTableSource, OssieQuerySource, OssieFileSource], Field(discriminator="kind")
-]
-# A string keeps its meaning from earlier versions: a table/view reference
-# (its parts split on every ".") or a query.
+# Only `table` is defined; later kinds join this alias as a discriminated union.
+OssieStructuredSource = OssieTableSource
+# A string is table shorthand (see `table_identifier`) or a legacy value such as a query.
 OssieSource = Union[Annotated[str, Field(min_length=1)], OssieStructuredSource]
+
+
+def table_identifier(source: "OssieSource") -> Optional[list[str]]:
+    """The table's name parts, or None if *source* is a string that is not shorthand.
+
+    A string is shorthand when it is parts joined by single dots, with no empty part and
+    no whitespace, control character, quote, bracket, "(", ")", ";" or ",". Anything else,
+    such as a query, keeps its consumer-specific meaning and must not be split.
+    """
+    if isinstance(source, OssieTableSource):
+        return list(source.identifier)
+    if isinstance(source, str) and _SHORTHAND.fullmatch(source):
+        return source.split(".")
+    return None
 
 
 class OssieDataset(BaseModel):

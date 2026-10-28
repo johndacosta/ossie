@@ -1948,10 +1948,11 @@ def test_expression_context_names_the_declaring_element(kind, dataset_name, expe
     "source",
     [
         "db.s.orders",
+        "SELECT * FROM o",
         {"kind": "table", "identifier": ["db", "s", "orders"]},
         {"kind": "table", "identifier": ["prod", "sales", "eu.orders"]},
-        {"kind": "query", "dialects": [{"dialect": "SNOWFLAKE", "expression": "SELECT * FROM o"}]},
-        {"kind": "file", "format": "parquet", "locations": ["s3://b/o/*.parquet"]},
+        {"kind": "table", "identifier": ["donn\u00e9es", "my table", "\"quoted\""]},
+        {"kind": "table", "identifier": ["a", "a"]},
     ],
 )
 def test_schema_accepts_each_source_form(core_schema: dict, source: object) -> None:
@@ -1963,20 +1964,94 @@ def test_schema_accepts_each_source_form(core_schema: dict, source: object) -> N
 @pytest.mark.parametrize(
     "source",
     [
-        {"kind": "view", "identifier": ["db", "s", "orders"]},
+        "",
+        42,
+        ["db", "s", "orders"],
+        {"identifier": ["db", "s", "orders"]},
         {"kind": "table"},
         {"kind": "table", "identifier": "db.s.orders"},
         {"kind": "table", "identifier": []},
         {"kind": "table", "identifier": ["db", ""]},
-        {"kind": "query", "dialects": []},
-        {"kind": "file", "format": "parquet", "locations": []},
-        {"identifier": ["db", "s", "orders"]},
+        {"kind": "table", "identifier": ["db", "  "]},
+        {"kind": "table", "identifier": ["db", 2024]},
+        {"kind": "table", "identifier": ["db", None]},
+        {"kind": "table", "identifier": ["db", "a\nb"]},
+        {"kind": "table", "identifier": ["db", "a\u0000b"]},
+        {"kind": "table", "identifier": ["db", "a\u2028b"]},
+        {"kind": "table", "identifier": ["db", "t"], "connection": "prod"},
     ],
 )
 def test_schema_rejects_malformed_sources(core_schema: dict, source: object) -> None:
     dataset = {**_ORDERS, "source": source}
 
     assert _VALIDATE.validate_schema(_document([dataset], []), core_schema) != []
+
+
+@pytest.mark.parametrize("kind", ["view", "query", "file", "TABLE"])
+def test_schema_rejects_unknown_kinds_by_name(core_schema: dict, kind: str) -> None:
+    dataset = {**_ORDERS, "source": {"kind": kind, "identifier": ["db", "t"]}}
+
+    errors = _VALIDATE.validate_schema(_document([dataset], []), core_schema)
+
+    assert any("source -> kind" in e and repr(kind) in e and "'table'" in e for e in errors)
+
+
+@pytest.mark.parametrize(
+    "source", ["orders", "db.s.orders", "donn\u00e9es.ventes", "cat.ns1.ns2.t", "my-db.s_1.t$2"]
+)
+def test_shorthand_sources_pass_without_warnings(source: str) -> None:
+    assert _VALIDATE.validate_dataset_sources(_document([{**_ORDERS, "source": source}], [])) == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "a..b",
+        ".a",
+        "a.",
+        "db..t",
+        " db.t",
+        "db.t\n",
+        "my table",
+        "SELECT * FROM t",
+        '"my.table"',
+        "`my.table`",
+        "[my.table]",
+        "db.'t'",
+        "f(x)",
+        "a;b",
+        "a,b",
+        "a\tb",
+    ],
+)
+def test_non_shorthand_string_sources_warn(source: str) -> None:
+    warnings = _VALIDATE.validate_dataset_sources(_document([{**_ORDERS, "source": source}], []))
+
+    assert len(warnings) == 1
+    assert isinstance(warnings[0], _VALIDATE.ValidationWarning)
+    assert "dataset 'orders'" in warnings[0]
+
+
+def test_structured_sources_do_not_warn() -> None:
+    dataset = {**_ORDERS, "source": {"kind": "table", "identifier": ["a b", "c.d"]}}
+
+    assert _VALIDATE.validate_dataset_sources(_document([dataset], [])) == []
+
+
+def test_legacy_query_source_still_passes_with_a_warning(core_schema: dict) -> None:
+    dataset = {**_ORDERS, "source": "SELECT * FROM db.s.orders"}
+
+    diagnostics = _VALIDATE.validate_document(_document([dataset], []), core_schema)
+
+    assert diagnostics
+    assert all(isinstance(d, _VALIDATE.ValidationWarning) for d in diagnostics)
+
+
+def test_shorthand_check_is_linear_on_hostile_input() -> None:
+    # A nested-quantifier pattern would backtrack exponentially on this input.
+    source = "a." * 50_000 + "!"
+
+    assert _VALIDATE._SHORTHAND_SOURCE.fullmatch(source + "(") is None
 
 
 def test_dataset_sources_example_is_valid(core_schema: dict) -> None:

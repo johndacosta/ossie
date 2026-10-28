@@ -100,24 +100,13 @@ datasets:
   # Required: Unique identifier for the logical dataset
   - name: string
 
-    # Required: Where the dataset's rows come from
-    # A string names a table/view (database_name.schema_name.table_name),
+    # Required: The table or view that holds the dataset's rows
+    # A string names a table/view in shorthand (database_name.schema_name.table_name),
     # split on every "."; earlier versions also allowed a query here.
-    # Or use an object with a kind:
+    # Names with dots, spaces or quotes need the object form:
     # source:
     #   kind: table
     #   identifier: [database_name, schema_name, table_name]
-    #
-    # source:
-    #   kind: query
-    #   dialects:
-    #     - dialect: string
-    #       expression: SELECT ...
-    #
-    # source:
-    #   kind: file
-    #   format: parquet
-    #   locations: [s3://bucket/path/*.parquet]
     source: string
 
     # Optional: Dataset fields that uniquely identify rows

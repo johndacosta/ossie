@@ -57,6 +57,7 @@ import difflib
 import importlib.util
 import json
 import os
+import re
 import sys
 import traceback
 from collections import Counter
@@ -775,6 +776,35 @@ def validate_metric_scoping(data: dict) -> list[str]:
     return errors
 
 
+# One shorthand table-name part (see "String Shorthand" in core-spec/spec.md). Parts
+# exclude ".", so the full match runs in linear time. Keep in step with ossie.models.
+_SHORTHAND_PART = "[^.\\s\"'`\\[\\]();,\u0000-\u001f\u007f-\u009f]+"
+_SHORTHAND_SOURCE = re.compile(f"{_SHORTHAND_PART}(?:\\.{_SHORTHAND_PART})*")
+
+
+def validate_dataset_sources(data: dict) -> list[str]:
+    """Warn about string sources that are not table shorthand.
+
+    Such strings (a query, a quoted name, "db..table") stay valid for backward
+    compatibility, but their meaning is consumer-specific, so this is a warning.
+    """
+    if not isinstance(data, dict):
+        return []
+    warnings = []
+    for dataset in as_list(data.get("datasets")):
+        if not isinstance(dataset, dict):
+            continue
+        source = dataset.get("source")
+        if isinstance(source, str) and not _SHORTHAND_SOURCE.fullmatch(source):
+            name = dataset.get("name", "<unnamed>")
+            warnings.append(ValidationWarning(
+                f"[Source] Warning: dataset '{name}' has a string source that is not a table name "
+                f"in shorthand form, so consumers may read it differently or reject it. "
+                f"Use 'kind: table' with an identifier list."
+            ))
+    return warnings
+
+
 def as_list(value: object) -> list:
     """The items of a list, or nothing for shapes that already failed the schema."""
     return value if isinstance(value, list) else []
@@ -977,6 +1007,7 @@ def validate_document(data, schema: dict) -> list[str]:
         errors.extend(validate_references(data))
         errors.extend(validate_relationship_column_arity(data))
         errors.extend(validate_metric_scoping(data))
+        errors.extend(validate_dataset_sources(data))
         errors.extend(validate_sql(data))
     if not errors and isinstance(data, dict) and "ontology" in data:
         errors.extend(validate_ontology(data))

@@ -751,6 +751,29 @@ def test_dataset_source_rejects_unknown_kind(kind: str) -> None:
         OssieDataset.model_validate({"name": "o", "source": {"kind": kind, "identifier": ["x"]}})
 
 
+@pytest.mark.parametrize(
+    ("identifier", "qualification"),
+    [(["orders"], None), (["orders"], "relative"), (["db", "orders"], "absolute")],
+)
+def test_table_source_accepts_qualification(identifier: list, qualification: object) -> None:
+    source = {"kind": "table", "identifier": identifier}
+    if qualification is not None:
+        source["qualification"] = qualification
+
+    assert OssieTableSource.model_validate(source).qualification == qualification
+
+
+@pytest.mark.parametrize("qualification", ["Absolute", "complete", 1])
+def test_table_source_rejects_unknown_qualification(qualification: object) -> None:
+    with pytest.raises(ValidationError):
+        OssieTableSource.model_validate({"kind": "table", "identifier": ["db", "t"], "qualification": qualification})
+
+
+def test_absolute_identifier_needs_more_than_one_part() -> None:
+    with pytest.raises(ValidationError, match="at least two parts"):
+        OssieTableSource.model_validate({"kind": "table", "identifier": ["orders"], "qualification": "absolute"})
+
+
 def test_table_identifier_keeps_parts_that_contain_dots() -> None:
     source = {"kind": "table", "identifier": ["prod", "sales", "eu.orders"]}
 

@@ -251,9 +251,29 @@
           },
           "minItems": 1,
           "description": "The catalog's name for the table or view as a list of parts, outermost first, e.g. [database, schema, table]. Each part is the exact stored name, unquoted; it may contain '.', but not control characters, and must not be blank."
+        },
+        "qualification": {
+          "enum": ["relative", "absolute"],
+          "default": "relative",
+          "description": "relative: the consumer may supply leading parts from the connection it uses. absolute: identifier is the complete name, so it has at least two parts."
         }
       },
       "required": ["kind", "identifier"],
+      "if": {
+        "properties": {
+          "qualification": {
+            "const": "absolute"
+          }
+        },
+        "required": ["qualification"]
+      },
+      "then": {
+        "properties": {
+          "identifier": {
+            "minItems": 2
+          }
+        }
+      },
       "additionalProperties": false
     },
     "Dataset": {

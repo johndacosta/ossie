@@ -1996,6 +1996,8 @@ def test_expression_context_names_the_declaring_element(kind, dataset_name, expe
         {"kind": "table", "identifier": ["prod", "sales", "eu.orders"]},
         {"kind": "table", "identifier": ["donn\u00e9es", "my table", "\"quoted\""]},
         {"kind": "table", "identifier": ["a", "a"]},
+        {"kind": "table", "identifier": ["orders"], "qualification": "relative"},
+        {"kind": "table", "identifier": ["db", "orders"], "qualification": "absolute"},
     ],
 )
 def test_schema_accepts_each_source_form(core_schema: dict, source: object) -> None:
@@ -2022,6 +2024,9 @@ def test_schema_accepts_each_source_form(core_schema: dict, source: object) -> N
         {"kind": "table", "identifier": ["db", "a\u0000b"]},
         {"kind": "table", "identifier": ["db", "a\u2028b"]},
         {"kind": "table", "identifier": ["db", "t"], "connection": "prod"},
+        {"kind": "table", "identifier": ["orders"], "qualification": "absolute"},
+        {"kind": "table", "identifier": ["db", "t"], "qualification": "Absolute"},
+        {"kind": "table", "identifier": ["db", "t"], "qualification": None},
     ],
 )
 def test_schema_rejects_malformed_sources(core_schema: dict, source: object) -> None:

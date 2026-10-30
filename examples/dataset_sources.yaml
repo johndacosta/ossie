@@ -43,11 +43,24 @@ datasets:
     expression:
       sql: customer_id
 
-# Quote a part that YAML would otherwise read as a number.
+# A relative name: each consumer supplies the database and schema from its own
+# connection, so the same model runs in every environment.
+- name: refunds
+  source:
+    kind: table
+    identifier: [refunds]
+  fields:
+  - name: refund_id
+    expression:
+      sql: refund_id
+
+# Quote a part that YAML would otherwise read as a number. absolute: the name
+# is complete, and no consumer adds parts to it.
 - name: orders_2024
   source:
     kind: table
     identifier: [sales, "2024", orders]
+    qualification: absolute
   fields:
   - name: order_id
     expression:

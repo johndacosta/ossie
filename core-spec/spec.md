@@ -197,6 +197,26 @@ source: sales.public.orders
 - A part may contain `.`, spaces, quotes, or any other Unicode character. It MUST NOT be blank, and it MUST NOT contain control characters (U+0000 to U+001F, U+007F to U+009F) or the line and paragraph separators U+2028 and U+2029.
 - Parts are strings. In YAML, quote a part that would otherwise read as a number, boolean, null, or date, such as `"2024"`.
 
+#### Qualification
+
+`qualification` says whether `identifier` is complete. It is optional, and the default is `relative`. String shorthand is always `relative`.
+
+- `relative`: the consumer MAY supply leading parts, such as the database and schema, from the connection it uses. The consumer decides how many parts it needs. If it needs none, it supplies none. This matches an unqualified name in SQL.
+- `absolute`: `identifier` is the complete name. The consumer MUST NOT add parts. An `absolute` identifier with one part is an invalid document.
+
+```yaml
+# The consumer supplies the database and schema
+source:
+  kind: table
+  identifier: [orders]
+
+# The complete name
+source:
+  kind: table
+  identifier: [sales, public, orders]
+  qualification: absolute
+```
+
 ```yaml
 # In catalog prod, the table eu.orders in namespace sales
 identifier: [prod, sales, eu.orders]
@@ -216,8 +236,9 @@ A string `source` is shorthand for `kind: table` when it is one or more parts jo
 
 Ossie names tables, not connections. Each consumer resolves `identifier` against the connections it already has.
 
-- A consumer matches the leading parts, such as a catalog or database name, to one of its connections, and finds the remaining parts within it. How it maps parts to connections is the consumer's own configuration.
+- A consumer matches the leading parts, such as a catalog or database name, to one of its connections, and finds the remaining parts within it. A `relative` identifier resolves within the connection the user chose. How a consumer maps parts to connections, or gets the parts it supplies, is the consumer's own configuration.
 - If no connection matches, or more than one does, the consumer MUST report it. It MUST NOT pick one.
+- If a consumer cannot supply the parts a `relative` identifier leaves out, or an identifier has more parts than it can represent, it MUST reject the source and name the parts it needs. It MUST NOT write an empty or partial name and report success.
 - A document cannot add a connection. A consumer MUST NOT open a connection or contact a host because a document names it.
 - `identifier` MUST NOT carry connection details, such as a connection name, host, or URL. A producer that needs them, for example to round-trip its own model, puts them in the dataset's `custom_extensions`.
 
@@ -919,7 +940,7 @@ ai_context:
 ## Version History
 
 - **0.2.0.dev0** (Unreleased): In-development next minor release. Schema is mutable; do not depend on this version in production.
-  - `source` may be an object with `kind: table` and an `identifier` that lists the table's name parts. String sources remain valid; a string in shorthand form names a table split on `.`. Consumers reject a kind they do not support. See [Source](#source).
+  - `source` may be an object with `kind: table` and an `identifier` that lists the table's name parts, and an optional `qualification` (`relative` by default, or `absolute`). String sources remain valid; a string in shorthand form names a table split on `.`. Consumers reject a kind they do not support. See [Source](#source).
   - Breaking: each standalone document contains one model directly at the root; the `semantic_model` array is removed.
   - Breaking: metric expressions, `primary_key`, `unique_keys`, and relationship `from_columns`/`to_columns` refer to dataset fields, not columns of the dataset's `source`. Model-scoped metric expressions must use qualified `dataset.field` references; dataset-scoped metric expressions use unqualified field names. Earlier versions did not specify this, and some converters read these names as source columns; those converters must now resolve them as fields. See [Name Resolution](#name-resolution).
 - **0.1.1** (2025-12-11): Initial release

@@ -325,6 +325,15 @@ class OssieTableSource(BaseModel):
     identifier: list[Annotated[str, Field(min_length=1), AfterValidator(_check_identifier_part)]] = Field(
         min_length=1
     )
+    # relative: the consumer may supply leading parts. absolute: identifier is complete.
+    # None means relative, the default, and keeps a round trip unchanged.
+    qualification: Optional[Literal["relative", "absolute"]] = None
+
+    @model_validator(mode="after")
+    def _absolute_is_complete(self) -> "OssieTableSource":
+        if self.qualification == "absolute" and len(self.identifier) < 2:
+            raise ValueError("an absolute identifier needs at least two parts")
+        return self
 
 
 # Only `table` is defined; later kinds join this alias as a discriminated union.

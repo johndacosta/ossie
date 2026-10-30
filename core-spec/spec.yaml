@@ -107,6 +107,7 @@ datasets:
     # source:
     #   kind: table
     #   identifier: [database_name, schema_name, table_name]
+    #   qualification: relative   # default; or absolute: identifier is complete
     source: string
 
     # Optional: Dataset fields that uniquely identify rows

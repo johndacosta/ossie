@@ -161,7 +161,7 @@ Logical datasets represent business entities or concepts (fact and dimension tab
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | Yes | Unique identifier for the dataset |
-| `source` | string | Yes | Reference to underlying physical table/view (e.g., `database.schema.table`) or query |
+| `source` | string/object | Yes | The table or view that holds the dataset's rows. See [Source](#source). |
 | `primary_key` | array | No | Dataset fields that uniquely identify rows |
 | `unique_keys` | array of arrays | No | Array of unique key definitions, each a list of dataset fields |
 | `description` | string | No | Human-readable description |
@@ -169,6 +169,94 @@ Logical datasets represent business entities or concepts (fact and dimension tab
 | `fields` | array | No | Row-level attributes for grouping, filtering, and metric expressions |
 | `metrics` | array | No | Dataset-scoped metrics that semantically belong to this dataset; expressions reference its declared fields by single-part name and resolve entirely within it. See [Metric Scoping](#metric-scoping). |
 | `custom_extensions` | array | No | Vendor-specific attributes |
+
+### Source
+
+`source` is either a string or an object with a `kind`. This version defines one kind, `table`.
+
+```yaml
+# A table or view, named by its parts
+source:
+  kind: table
+  identifier: [sales, public, orders]
+
+# The same table as a string
+source: sales.public.orders
+```
+
+- `kind: table` means `identifier` names one table or view. A consumer MAY reject the source if it cannot resolve `identifier` (see [Resolving a Table](#resolving-a-table)).
+- Later versions may add kinds, such as queries, files, or a dataset in another Ossie model. A consumer MUST reject a source whose `kind` it does not support, and say so. It MUST NOT read the source as a different kind.
+- `identifier` is a reference only. Ossie does not guarantee that two consumers reach the same physical data through it.
+
+#### Table Identifier
+
+`identifier` is the catalog's name for the table or view, as a list of parts, outermost first: for example a catalog or database, one or more namespace levels, and the table.
+
+- It has as many parts as the catalog uses. Ossie does not fix the number of parts or name the levels, and parts may repeat.
+- Each part is the name exactly as the catalog stores it, including its case. Consumers compare parts exactly. Parts are not quoted or escaped.
+- A part may contain `.`, spaces, quotes, or any other Unicode character. It MUST NOT be blank, and it MUST NOT contain control characters (U+0000 to U+001F, U+007F to U+009F) or the line and paragraph separators U+2028 and U+2029.
+- Parts are strings. In YAML, quote a part that would otherwise read as a number, boolean, null, or date, such as `"2024"`.
+
+#### Qualification
+
+`qualification` says whether `identifier` is complete. It is optional, and the default is `relative`. String shorthand is always `relative`.
+
+- `relative`: the consumer MAY supply leading parts, such as the database and schema, from the connection it uses. The consumer decides how many parts it needs. If it needs none, it supplies none. This matches an unqualified name in SQL.
+- `absolute`: `identifier` is the complete name. The consumer MUST NOT add parts. An `absolute` identifier with one part is an invalid document.
+
+```yaml
+# The consumer supplies the database and schema
+source:
+  kind: table
+  identifier: [orders]
+
+# The complete name
+source:
+  kind: table
+  identifier: [sales, public, orders]
+  qualification: absolute
+```
+
+```yaml
+# In catalog prod, the table eu.orders in namespace sales
+identifier: [prod, sales, eu.orders]
+
+# A different table: orders in the nested namespace sales.eu
+identifier: [prod, sales, eu, orders]
+```
+
+#### String Shorthand
+
+A string `source` is shorthand for `kind: table` when it is one or more parts joined by single `.` characters and no part is empty or contains whitespace, a control character, or any of `"`, `'`, `` ` ``, `[`, `]`, `(`, `)`, `;`, or `,`. Its parts are the string split on `.`, so `sales.public.orders` is `[sales, public, orders]`.
+
+- Any other name needs the list form. That includes a part that contains `.` or a space, and SQL-quoted names such as `"my.table"`, `` `my.table` ``, or `[my.table]`: shorthand has no quoting syntax.
+- Earlier versions allowed any non-empty string, including a query. Such strings stay valid and keep their earlier, consumer-specific meaning, but they are not shorthand. A consumer MAY reject them and MUST NOT read them as table parts. Validators SHOULD warn about them.
+
+#### Resolving a Table
+
+Ossie names tables, not connections. Each consumer resolves `identifier` against the connections it already has.
+
+- A consumer matches the leading parts, such as a catalog or database name, to one of its connections, and finds the remaining parts within it. A `relative` identifier resolves within the connection the user chose. How a consumer maps parts to connections, or gets the parts it supplies, is the consumer's own configuration.
+- If no connection matches, or more than one does, the consumer MUST report it. It MUST NOT pick one.
+- If a consumer cannot supply the parts a `relative` identifier leaves out, or an identifier has more parts than it can represent, it MUST reject the source and name the parts it needs. It MUST NOT write an empty or partial name and report success.
+- A document cannot add a connection. A consumer MUST NOT open a connection or contact a host because a document names it.
+- `identifier` MUST NOT carry connection details, such as a connection name, host, or URL. A producer that needs them, for example to round-trip its own model, puts them in the dataset's `custom_extensions`.
+
+```yaml
+datasets:
+  - name: orders
+    source:
+      kind: table
+      identifier: [sales, public, orders]
+    custom_extensions:
+      - vendor_name: BI_TOOL
+        data: '{"connection": "warehouse_prod"}'   # read back only by BI_TOOL
+```
+
+#### Security
+
+- Parts are data, not SQL. A consumer that builds SQL from `identifier` or from string shorthand MUST quote each part as a delimited identifier for its engine, escaping the engine's quote character, and MUST NOT insert a part into SQL text unquoted.
+- Documents are shared. `identifier` and `custom_extensions` MUST NOT contain credentials, tokens, or other secrets.
 
 ### Primary Key Examples
 
@@ -852,6 +940,7 @@ ai_context:
 ## Version History
 
 - **0.2.0.dev0** (Unreleased): In-development next minor release. Schema is mutable; do not depend on this version in production.
+  - `source` may be an object with `kind: table` and an `identifier` that lists the table's name parts, and an optional `qualification` (`relative` by default, or `absolute`). String sources remain valid; a string in shorthand form names a table split on `.`. Consumers reject a kind they do not support. See [Source](#source).
   - Breaking: each standalone document contains one model directly at the root; the `semantic_model` array is removed.
   - Breaking: metric expressions, `primary_key`, `unique_keys`, and relationship `from_columns`/`to_columns` refer to dataset fields, not columns of the dataset's `source`. Model-scoped metric expressions must use qualified `dataset.field` references; dataset-scoped metric expressions use unqualified field names. Earlier versions did not specify this, and some converters read these names as source columns; those converters must now resolve them as fields. See [Name Resolution](#name-resolution).
 - **0.1.1** (2025-12-11): Initial release

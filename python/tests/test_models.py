@@ -38,7 +38,9 @@ from ossie import (
     OssieMetric,
     OssieRelationship,
     OssieSemanticModel,
+    OssieTableSource,
     OssieVendor,
+    table_identifier,
 )
 
 
@@ -465,6 +467,7 @@ def test_unknown_field_names_match_the_schema_allowlist() -> None:
         "Dimension": OssieDimension,
         "Field": OssieField,
         "Dataset": OssieDataset,
+        "TableSource": OssieTableSource,
         "Relationship": OssieRelationship,
         "Metric": OssieMetric,
         "SemanticModel": OssieSemanticModel,
@@ -557,6 +560,7 @@ def test_is_time_may_be_omitted() -> None:
 _CONSTRAINED_NODES = {
     "SemanticModel": OssieSemanticModel,
     "Dataset": OssieDataset,
+    "TableSource": OssieTableSource,
     "Field": OssieField,
     "Metric": OssieMetric,
     "Relationship": OssieRelationship,
@@ -725,3 +729,98 @@ def test_relationship_columns_min_length() -> None:
 def test_semantic_model_datasets_min_length() -> None:
     with pytest.raises(ValidationError):
         OssieSemanticModel(name="model", datasets=[])
+
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("db.s.orders", str),
+        ({"kind": "table", "identifier": ["db", "s", "orders"]}, OssieTableSource),
+    ],
+)
+def test_dataset_source_forms_parse_by_kind(source: object, expected: type) -> None:
+    dataset = OssieDataset.model_validate({"name": "orders", "source": source})
+
+    assert isinstance(dataset.source, expected)
+
+
+@pytest.mark.parametrize("kind", ["view", "query", "file"])
+def test_dataset_source_rejects_unknown_kind(kind: str) -> None:
+    with pytest.raises(ValidationError, match="'table'"):
+        OssieDataset.model_validate({"name": "o", "source": {"kind": kind, "identifier": ["x"]}})
+
+
+@pytest.mark.parametrize(
+    ("identifier", "qualification"),
+    [(["orders"], None), (["orders"], "relative"), (["db", "orders"], "absolute")],
+)
+def test_table_source_accepts_qualification(identifier: list, qualification: object) -> None:
+    source = {"kind": "table", "identifier": identifier}
+    if qualification is not None:
+        source["qualification"] = qualification
+
+    assert OssieTableSource.model_validate(source).qualification == qualification
+
+
+@pytest.mark.parametrize("qualification", ["Absolute", "complete", 1])
+def test_table_source_rejects_unknown_qualification(qualification: object) -> None:
+    with pytest.raises(ValidationError):
+        OssieTableSource.model_validate({"kind": "table", "identifier": ["db", "t"], "qualification": qualification})
+
+
+def test_absolute_identifier_needs_more_than_one_part() -> None:
+    with pytest.raises(ValidationError, match="at least two parts"):
+        OssieTableSource.model_validate({"kind": "table", "identifier": ["orders"], "qualification": "absolute"})
+
+
+def test_table_identifier_keeps_parts_that_contain_dots() -> None:
+    source = {"kind": "table", "identifier": ["prod", "sales", "eu.orders"]}
+
+    dataset = OssieDataset.model_validate({"name": "orders", "source": source})
+
+    assert dataset.source.identifier == ["prod", "sales", "eu.orders"]
+    assert dataset.model_dump(exclude_none=True)["source"] == source
+
+
+@pytest.mark.parametrize(
+    "identifier",
+    ["db.s.orders", [], ["db", ""], ["db", "   "], ["db", 2024], ["db", "a\nb"], ["db", "a\x00b"], ["db", "a\u2028b"]],
+)
+def test_table_identifier_must_be_a_list_of_valid_parts(identifier: object) -> None:
+    with pytest.raises(ValidationError):
+        OssieDataset.model_validate(
+            {"name": "o", "source": {"kind": "table", "identifier": identifier}}
+        )
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("orders", ["orders"]),
+        ("sales.public.orders", ["sales", "public", "orders"]),
+        (OssieTableSource(kind="table", identifier=["prod", "sales", "eu.orders"]), ["prod", "sales", "eu.orders"]),
+        ("a..b", None),
+        (".a", None),
+        ("a.", None),
+        ("my table", None),
+        ("SELECT * FROM t", None),
+        ('"my.table"', None),
+        ("`my.table`", None),
+        ("[my.table]", None),
+        ("db.t\n", None),
+    ],
+)
+def test_table_identifier_reads_shorthand_only(source: object, expected: object) -> None:
+    assert table_identifier(source) == expected
+
+
+def test_shorthand_and_validator_agree() -> None:
+    root = Path(__file__).parents[2]
+
+    def pattern_line(path: Path) -> str:
+        return next(l for l in path.read_text().splitlines() if l.startswith("_SHORTHAND_PART = "))
+
+    assert pattern_line(root / "python" / "src" / "ossie" / "models.py") == pattern_line(
+        root / "validation" / "validate.py"
+    )

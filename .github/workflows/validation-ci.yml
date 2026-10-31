@@ -24,6 +24,7 @@ on:
     branches: ["main"]
     paths:
       - "validation/**"
+      - "ost/**"
       - "python/**"
       - "core-spec/**"
       - "ontology/**"
@@ -35,6 +36,7 @@ on:
     branches: ["main"]
     paths:
       - "validation/**"
+      - "ost/**"
       - "python/**"
       - "core-spec/**"
       - "ontology/**"
@@ -72,7 +74,7 @@ jobs:
         run: uv run validation/test_validate.py
 
       - name: Run validation pytest tests
-        run: uv run --with pytest --with pyyaml --with jsonschema --with sqlglot -m pytest validation/tests/
+        run: uv run --with pytest --with pyyaml --with jsonschema --with sqlglot --with ./ost -m pytest validation/tests/
 
       - name: Run shared Python model tests
         run: uv run --with pytest --with jsonschema --with ./python -m pytest python/tests/

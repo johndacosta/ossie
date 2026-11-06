@@ -30,7 +30,10 @@ from pydantic import (
     StrictBool,
     TypeAdapter,
     model_serializer,
+    model_validator,
 )
+
+from ossie._loading import UniqueKeyLoader, unique_json_object
 
 
 _AI_CONTEXT_FIELDS = frozenset({"instructions", "synonyms", "examples"})
@@ -116,7 +119,8 @@ def _invalid_properties(node: Any) -> list[tuple[str, str]]:
 
 
 class OssieDialect(str, Enum):
-    """Supported SQL and expression language dialects."""
+    """Well-known dialect values. The field accepts any string; see
+    `extensions/dialects.md`."""
 
     ANSI_SQL = "ANSI_SQL"
     SNOWFLAKE = "SNOWFLAKE"
@@ -130,6 +134,11 @@ class OssieDialect(str, Enum):
     DAX = "DAX"
     HOLISTICS_AQL = "HOLISTICS_AQL"
     OSSIE_SQL_2026 = "OSSIE_SQL_2026"
+    SPARQL = "SPARQL"
+    TRINO = "TRINO"
+    CLICKHOUSE = "CLICKHOUSE"
+    POSTGRES = "POSTGRES"
+    REDSHIFT = "REDSHIFT"
 
 
 class OssieDataType(str, Enum):
@@ -158,18 +167,23 @@ _TEMPORAL_DATA_TYPES = frozenset(
 
 
 class OssieVendor(str, Enum):
-    """Well-known vendor names for custom extensions."""
+    """Well-known vendor values. The field accepts any string; see
+    `extensions/vendors.md`."""
 
-    COMMON = "COMMON"
     SNOWFLAKE = "SNOWFLAKE"
     SALESFORCE = "SALESFORCE"
     DBT = "DBT"
     DATABRICKS = "DATABRICKS"
     GOODDATA = "GOODDATA"
     SEMANTIDO = "SEMANTIDO"
+    HONEYDEW = "HONEYDEW"
     WISDOM = "WISDOM"
+    POWER_BI = "POWER_BI"
     SIGMA = "SIGMA"
+    THOUGHTSPOT = "THOUGHTSPOT"
     HEX = "HEX"
+    ATACCAMA = "ATACCAMA"
+    OMNI = "OMNI"
 
 
 class OssieAIContextObject(BaseModel):
@@ -200,11 +214,11 @@ OssieAIContext = Union[str, OssieAIContextObject]
 
 
 class OssieCustomExtension(BaseModel):
-    """Vendor-specific metadata as a serialized JSON string."""
+    """Vendor-specific metadata carried as an opaque string."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    vendor_name: str
+    vendor_name: str = Field(min_length=1)
     data: str
 
 
@@ -213,8 +227,9 @@ class OssieDialectExpression(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    dialect: OssieDialect
-    expression: str
+    # Free-form; see OssieDialect for the well-known values.
+    dialect: str = Field(min_length=1)
+    expression: str = Field(min_length=1)
 
 
 class OssieExpression(BaseModel):
@@ -222,7 +237,15 @@ class OssieExpression(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    dialects: list[OssieDialectExpression] = Field(..., min_length=1)
+    # Primary, portable expression written in OSSIE_SQL_2026.
+    sql: Optional[str] = Field(default=None, min_length=1)
+    dialects: Optional[list[OssieDialectExpression]] = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _require_sql_or_dialects(self) -> "OssieExpression":
+        if self.sql is None and not self.dialects:
+            raise ValueError("expression requires at least one of 'sql' or 'dialects'")
+        return self
 
 
 class OssieDimension(BaseModel):
@@ -294,7 +317,8 @@ class OssieDataset(BaseModel):
     description: Optional[str] = None
     ai_context: Optional[OssieAIContext] = None
     fields: Optional[list[OssieField]] = None
-    # Dataset-scoped: expressions reference this dataset's declared fields by single-part (unqualified) name.
+    # Dataset-scoped: expressions reference this dataset's declared fields by single-part
+    # (unqualified) name and its source columns as source.column.
     metrics: Optional[list[OssieMetric]] = None
     custom_extensions: Optional[list[OssieCustomExtension]] = None
 
@@ -378,8 +402,9 @@ class OssieDocument(OssieSemanticModel):
         different: it is the artefact the schema governs, so these rules apply to it
         and not to the models.
 
-        Rejected here: a property set to null, a missing ``version``, a non-finite
-        number, and a cyclic alias. The field types reject the rest of the schema.
+        Rejected here: a duplicate mapping key, a property set to null, a missing
+        ``version``, a non-finite number, and a cyclic alias. YAML merge overrides
+        remain supported. The field types reject the rest of the schema.
 
         A diagnostic lists at most :data:`_MAX_REPORTED` paths and counts the rest, so
         fixing the ones named can reveal more on the next run.
@@ -392,7 +417,7 @@ class OssieDocument(OssieSemanticModel):
         out, is a property of the models rather than of parsing, and is not in scope
         here.
         """
-        return cls._from_document(yaml.safe_load(text))
+        return cls._from_document(yaml.load(text, Loader=UniqueKeyLoader))
 
     @classmethod
     def from_ossie_json(cls, text: str) -> "OssieDocument":
@@ -401,7 +426,7 @@ class OssieDocument(OssieSemanticModel):
         The counterpart of :meth:`to_ossie_json`; see :meth:`from_ossie_yaml` for what
         is and is not checked.
         """
-        return cls._from_document(json.loads(text))
+        return cls._from_document(json.loads(text, object_pairs_hook=unique_json_object))
 
     @classmethod
     def _from_document(cls, data: Any) -> "OssieDocument":
